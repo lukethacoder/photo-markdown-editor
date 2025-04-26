@@ -1,0 +1,518 @@
+import React from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+import { redirect } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { z } from 'zod'
+import { X } from 'lucide-react'
+import { PHOTOGRAPHY_TAGS, PhotoSchema } from '@repo/types'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { API_BASE_URL } from '@/constants'
+import { MultiSelect } from '@/components/multi-select'
+import { InputDateTime } from '@/components/input-date-time'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Slider } from '@/components/ui/slider'
+
+const schema = PhotoSchema({ image: () => z.string() })
+
+type InstagramTags = z.infer<typeof schema>['instagramTags']
+
+export const Route = createFileRoute('/image/$slug')({
+  loader: async ({ params: { slug } }) => {
+    const data = await fetch(`${API_BASE_URL}/api/photos/${slug}`).then((res) =>
+      res.json()
+    )
+    const parsedData = schema.parse(data)
+
+    return {
+      slug,
+      ...parsedData,
+    }
+  },
+  component: RouteComponent,
+})
+
+function processInstagramTags(formData: FormData): InstagramTags {
+  const usernames: string[] = formData.getAll('username') as string[]
+  const instagramTags: InstagramTags = []
+  const positions: Record<string, Record<string, number>> = {}
+
+  // extract the positions of the tags
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith('position-')) {
+      const parts = key.split('-')
+      const usernameIndex = parts[2]
+
+      if (!positions[usernameIndex]) {
+        positions[usernameIndex] = {}
+      }
+      positions[usernameIndex][parts[1]] = parseInt(String(value), 10)
+    }
+  }
+
+  // map the positions to the respective usernames
+  usernames.forEach((username, index) => {
+    if (positions[index] && Object.keys(positions[index]).length > 0) {
+      const sortedPositions = Object.keys(positions[index])
+        .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+        .map((key) => positions[index][key])
+
+      instagramTags.push({
+        username: username,
+        position: sortedPositions,
+      })
+    }
+  })
+
+  return instagramTags
+}
+
+const updateMetadata = createServerFn({ method: 'POST' })
+  .validator((formData) => {
+    if (!(formData instanceof FormData)) {
+      throw new Error('Invalid form data')
+    }
+
+    const slug = formData.get('slug')
+
+    if (!slug) {
+      throw new Error('slug is required')
+    }
+
+    const formatData = Object.fromEntries(formData.entries())
+    console.log('TODO: formatData ', formatData)
+    const oldSlug = formData.get('old-slug')
+
+    const date = new Date(parseInt(formatData.date as string))
+
+    const data = {
+      ...formatData,
+      date,
+      tags: Array.isArray(formatData.tags)
+        ? formatData.tags
+        : [formatData.tags],
+      instagramTags: processInstagramTags(formData),
+    }
+
+    const parsedData = schema.parse(data)
+
+    if (oldSlug !== slug) {
+      console.log('chaning slug ', oldSlug, ' to ', slug)
+    }
+    console.log('with data ', parsedData)
+
+    // throw new Error('Invalid form data')
+
+    return {
+      data: parsedData,
+      oldSlug,
+    }
+  })
+  // @ts-ignore - pending https://github.com/TanStack/router/issues/3820
+  .handler(async ({ data: { data, oldSlug } }) => {
+    const body: BodyInit = JSON.stringify(data)
+    console.log('body ', body)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/photos/${oldSlug}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body,
+      })
+
+      console.log('response ', response)
+      // throw redirect({
+      //   to: `/image/${data.slug}`,
+      //   headers: {
+      //     'X-Custom-Header': 'value',
+      //   },
+      // })
+
+      return 'success'
+      // return new Response('ok', {
+      //   status: 301,
+      //   headers: { Location: `/image/${data.slug}` },
+      // })
+    } catch (error) {
+      // return new Response('error', {
+      //   status: 404,
+      // })
+      return
+    }
+  })
+
+function RouteComponent() {
+  const initialData = Route.useLoaderData()
+  const navigate = useNavigate()
+
+  const [data, setData] = React.useState(initialData)
+
+  const handleAddNewTag = () => {
+    setData({
+      ...data,
+      instagramTags: [
+        ...(data.instagramTags || []),
+        {
+          username: '',
+          position: [1, 1],
+        },
+      ],
+    })
+  }
+
+  const handleRemoveInstagramTag = (key) => {
+    const instagramTags = data.instagramTags || []
+    if (instagramTags.length > 0) {
+      instagramTags.splice(key, 1)
+    }
+
+    setData({
+      ...data,
+      instagramTags,
+    })
+  }
+
+  /**
+   * Only tracks the inputs of the instagramTags to live update them on the image overlay
+   * @param event
+   */
+  const handleInputChange = (event) => {
+    console.log('event ', event)
+    const { target } = event
+    const { value, name } = target
+
+    const indexKey = Number(target.dataset.key)
+
+    console.log('handleInputChange ', indexKey, name, Number(value))
+
+    const instagramTags = (data.instagramTags || []).map((item, key) => {
+      if (indexKey === key) {
+        if (name.includes('position')) {
+          console.warn('setting position ', Number(value))
+          return {
+            ...item,
+            position: [
+              name === `position-0-${key}` ? Number(value) : item.position[0],
+              name === `position-1-${key}` ? Number(value) : item.position[1],
+            ],
+          }
+        }
+
+        return {
+          ...item,
+          [name]: value,
+        }
+      }
+      return item
+    })
+
+    setData({
+      ...data,
+      instagramTags,
+    })
+  }
+
+  const handleInputSliderChange = (indexKey, name, value) => {
+    const instagramTags = (data.instagramTags || []).map((item, key) => {
+      if (indexKey === key) {
+        if (name.includes('position')) {
+          return {
+            ...item,
+            position: [
+              name === `position-0-${key}` ? Number(value) : item.position[0],
+              name === `position-1-${key}` ? Number(value) : item.position[1],
+            ],
+          }
+        }
+
+        return {
+          ...item,
+          [name]: value,
+        }
+      }
+      return item
+    })
+
+    setData({
+      ...data,
+      instagramTags,
+    })
+  }
+
+  return (
+    <div className='grid md:grid-cols-2 gap-4 p-4 max-w-7xl mx-auto'>
+      <div>
+        <Card className='w-full'>
+          <CardHeader>
+            <CardTitle>Image Editor</CardTitle>
+            <CardDescription>{data.slug}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className='flex flex-col gap-4'
+            >
+              {/* action={updateMetadata.url}
+              method='POST' */}
+              <div className='sr-only'>
+                <Label htmlFor='src'>src</Label>
+                <Input id='src' name='src' defaultValue={data.src} readOnly />
+              </div>
+              <div className='sr-only'>
+                <Label htmlFor='old-slug'>Old Slug</Label>
+                <Input id='old-slug' name='old-slug' defaultValue={data.slug} />
+              </div>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='slug'>Slug</Label>
+                <Input id='slug' name='slug' defaultValue={data.slug} />
+              </div>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='title'>Title</Label>
+                <Input id='title' name='title' defaultValue={data.title} />
+              </div>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='alt'>Image alt</Label>
+                <Input id='alt' name='alt' defaultValue={data.alt} />
+              </div>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='date'>Date</Label>
+                <InputDateTime id='date' name='date' defaultValue={data.date} />
+              </div>
+              <div className='flex flex-col gap-2'>
+                <Label htmlFor='date'>Tags</Label>
+                <MultiSelect
+                  id='tags'
+                  name='tags'
+                  options={PHOTOGRAPHY_TAGS.map((item) => ({
+                    label: item,
+                    value: item,
+                  }))}
+                  defaultValue={data.tags}
+                />
+              </div>
+
+              <hr />
+
+              <h3>Location</h3>
+              <div className='flex flex-col gap-2'>
+                <div className='flex flex-col gap-2'>
+                  <Label htmlFor='location.name'>Name</Label>
+                  <Input
+                    id='location.name'
+                    name='title'
+                    defaultValue={data.location?.name}
+                  />
+                </div>
+                <div className='flex flex-col gap-2'>
+                  <Label htmlFor='location.url'>URL</Label>
+                  <Input
+                    id='location.url'
+                    name='location.url'
+                    defaultValue={data.location?.url}
+                  />
+                </div>
+              </div>
+
+              <hr />
+
+              <h3>Instagram Tags</h3>
+              <ul className='flex flex-col gap-4'>
+                {data.instagramTags &&
+                  data.instagramTags.map((item, key) => (
+                    <li key={key} className='gap-4 flex flex-col'>
+                      <Card className='p-0'>
+                        <CardContent className='flex p-0'>
+                          <div className='w-full p-4 border-r flex flex-col gap-3'>
+                            <div className='flex flex-col gap-2'>
+                              <Label htmlFor={`username-${key}`}>
+                                Username
+                              </Label>
+                              <Input
+                                id={`username-${key}`}
+                                name='username'
+                                data-key={key}
+                                defaultValue={item.username}
+                                onChange={handleInputChange}
+                              />
+                            </div>
+                            <div className='flex flex-col gap-2'>
+                              <h3 className='flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50'>
+                                Position
+                              </h3>
+                              <div className='flex gap-2'>
+                                <div className='flex flex-col w-1/2 gap-4 pb-1'>
+                                  <Label
+                                    htmlFor={`position-0-${key}`}
+                                    className='sr-only'
+                                  >
+                                    Position Y
+                                  </Label>
+                                  <Input
+                                    id={`position-0-${key}`}
+                                    name={`position-0-${key}`}
+                                    type='number'
+                                    min={0}
+                                    max={100}
+                                    value={item.position[0]}
+                                    data-key={key}
+                                    onChange={handleInputChange}
+                                  />
+                                  <Slider
+                                    id={`position-0-${key}`}
+                                    name={`position-0-${key}`}
+                                    max={100}
+                                    min={0}
+                                    step={1}
+                                    data-key={key}
+                                    value={[item.position[0]]}
+                                    onValueChange={(value) =>
+                                      handleInputSliderChange(
+                                        key,
+                                        `position-0-${key}`,
+                                        value
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className='flex flex-col w-1/2 gap-4 pb-1'>
+                                  <Label
+                                    htmlFor={`position-1-${key}`}
+                                    className='sr-only'
+                                  >
+                                    Position X
+                                  </Label>
+                                  <Input
+                                    id={`position-1-${key}`}
+                                    name={`position-1-${key}`}
+                                    type='number'
+                                    min={0}
+                                    max={100}
+                                    value={item.position[1]}
+                                    data-key={key}
+                                    onChange={handleInputChange}
+                                  />
+                                  <Slider
+                                    id={`position-1-${key}`}
+                                    name={`position-1-${key}`}
+                                    max={100}
+                                    min={0}
+                                    step={1}
+                                    data-key={key}
+                                    value={[item.position[1]]}
+                                    onValueChange={(value) =>
+                                      handleInputSliderChange(
+                                        key,
+                                        `position-1-${key}`,
+                                        value
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className='flex items-center p-2'>
+                            <Button
+                              type='button'
+                              size='icon'
+                              variant='destructive'
+                              aria-label='Delete item'
+                              onClick={() => handleRemoveInstagramTag(key)}
+                            >
+                              <X />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </li>
+                  ))}
+                <li className='flex justify-end'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    onClick={handleAddNewTag}
+                  >
+                    Add new tag
+                  </Button>
+                </li>
+              </ul>
+
+              <hr />
+
+              <div className='flex justify-end gap-2'>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  onClick={() => toast.success('hello world')}
+                >
+                  Toast
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => navigate({ to: '/' })}
+                >
+                  Cancel
+                </Button>
+                <Button type='submit' onClick={(event) => {
+                  event.preventDefault()
+                  console.log('event ', event)
+                  // await updateMetadata()
+                }}>Save</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+      <div className='flex flex-col gap-4'>
+        <div className='relative'>
+          <div className='absolute w-full h-full'>
+            {data.instagramTags?.map((item, key) => {
+              const top = item.position[0]
+              const left = item.position[1]
+
+              // any value above 75% should be "inverted" so the label renders correctly
+
+              const topOrBottom = top < 75 ? 'top' : 'bottom'
+              const topOrBottomValue = top < 75 ? top : 100 - top
+
+              const leftOrRight = left < 75 ? 'left' : 'right'
+              const leftOrRightValue = left < 75 ? left : 100 - left
+
+              // any value above 90 should drop the "x center" offset
+              const shouldTranslateX =
+                leftOrRightValue < 95 && leftOrRightValue > 5
+
+              return (
+                <button
+                  key={key}
+                  style={{
+                    [topOrBottom]: `${topOrBottomValue}%`,
+                    [leftOrRight]: `${leftOrRightValue}%`,
+                  }}
+                  className={`flex cursor-pointer absolute bg-black text-white p-1 rounded text-sm pointer-events-auto ${shouldTranslateX ? '-translate-x-1/2' : ''}`}
+                >
+                  {item.username}
+                </button>
+              )
+            })}
+          </div>
+          <img src={`${API_BASE_URL}/images/${data.slug}.avif`} />
+        </div>
+        <div className='flex max-w-full w-[240px] h-[240px]'>
+          <img src={data.blurHash} className='object-contain' />
+        </div>
+      </div>
+    </div>
+  )
+}
