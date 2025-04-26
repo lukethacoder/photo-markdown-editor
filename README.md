@@ -1,11 +1,8 @@
 <a name="readme-top"></a>
 
-<!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/lukethacoder/lwc-garden">
-    <span style="font-size: 84px;">📷</span>
-  </a>
+  <img src="./docs/logo.png" width="142px" />
 
   <h3 align="center">Photo Markdown editor</h3>
   <p align="center">
