@@ -1,7 +1,5 @@
 import React from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
-import { redirect } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { X } from 'lucide-react'
@@ -21,6 +19,16 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Slider } from '@/components/ui/slider'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ISO_COUNTRIES } from 'node_modules/@repo/types/src/constants'
 
 const schema = PhotoSchema({ image: () => z.string() })
 
@@ -190,12 +198,25 @@ function RouteComponent() {
 
     const date = new Date(parseInt(formatData.date as string))
 
+    const location_name = formData.get('location_name')
+    const location_url = formData.get('location_url')
+    const location_flag = formData.get('location_flag')
+
     const data = {
       ...formatData,
       date,
       tags: Array.isArray(formatData.tags)
         ? formatData.tags
-        : [formatData.tags],
+        : (formatData.tags as string).split(','),
+      ...(location_name || location_url || location_flag
+        ? {
+            location: {
+              ...(location_name ? { name: location_name } : {}),
+              ...(location_url ? { url: location_url } : {}),
+              ...(location_flag ? { flag: location_flag } : {}),
+            },
+          }
+        : {}),
       instagramTags: processInstagramTags(formData),
     }
 
@@ -234,21 +255,19 @@ function RouteComponent() {
   }
 
   const handleOnSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // Prevents the default browser form submission
-    
-    const form = event.currentTarget;
-    const formData = new FormData(form);
+    event.preventDefault() // Prevents the default browser form submission
+
+    const form = event.currentTarget
+    const formData = new FormData(form)
 
     try {
-      console.log("Form data submitted:", formData);
+      console.log('Form data submitted:', formData)
       const { data } = validateForm(formData)
 
       console.log('data ', data)
-  
+
       await updatePostData(data)
       toast.success('Successfully updated data')
-
-      
 
       // redirect if slugs have changed
       if (initialSlug !== data.slug) {
@@ -256,16 +275,24 @@ function RouteComponent() {
         navigate({ to: `/image/${data.slug}` })
       }
     } catch (error) {
-      console.error("Submission failed:", error);
-  
+      console.error('Submission failed:', error)
+
       // Optionally display an error message to the user
       // alert("Oops! Something went wrong. Please try again.");
-      toast.error('Error updating metadata')
+      toast.error(
+        <div className='overflow-hidden w-full'>
+          <p>Error updating metadata</p>
+          <div className='w-full max-h-[320px] overflow-auto'>
+            <pre className='w-full'>{JSON.stringify(error, undefined, 2)}</pre>
+          </div>
+        </div>,
+        { duration: 10000, dismissible: true }
+      )
     } finally {
       // Optionally perform any cleanup or final actions
-      console.log("Submission process completed.");
+      console.log('Submission process completed.')
     }
-  };
+  }
 
   return (
     <div className='grid md:grid-cols-2 gap-4 p-4 max-w-7xl mx-auto'>
@@ -276,10 +303,7 @@ function RouteComponent() {
             <CardDescription>{data.slug}</CardDescription>
           </CardHeader>
           <CardContent>
-            <form
-              className='flex flex-col gap-4'
-              onSubmit={handleOnSubmit}
-            >
+            <form className='flex flex-col gap-4' onSubmit={handleOnSubmit}>
               <div className='sr-only'>
                 <Label htmlFor='src'>src</Label>
                 <Input id='src' name='src' defaultValue={data.src} readOnly />
@@ -324,18 +348,54 @@ function RouteComponent() {
                 <div className='flex flex-col gap-2'>
                   <Label htmlFor='location.name'>Name</Label>
                   <Input
-                    id='location.name'
-                    name='title'
+                    id='location_name'
+                    name='location_name'
                     defaultValue={data.location?.name}
                   />
                 </div>
                 <div className='flex flex-col gap-2'>
                   <Label htmlFor='location.url'>URL</Label>
                   <Input
-                    id='location.url'
-                    name='location.url'
+                    id='location_url'
+                    name='location_url'
                     defaultValue={data.location?.url}
                   />
+                </div>
+                <div className='flex flex-col gap-2'>
+                  <Label htmlFor='location_flag'>Flag</Label>
+                  <Select
+                    defaultValue={data.location?.flag}
+                    onValueChange={(event) => {
+                      console.log('event ', event)
+                      setData({
+                        ...data,
+                        location: {
+                          ...data.location,
+                          flag: event,
+                        } as z.infer<typeof schema>['location'],
+                      })
+                    }}
+                  >
+                    <input
+                      value={data.location?.flag}
+                      name='location_flag'
+                      readOnly
+                    />
+                    <SelectTrigger className='w-full'>
+                      <SelectValue placeholder='Select a flag' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>Flags</SelectLabel>
+                        <SelectItem value='null'>None</SelectItem>
+                        {Object.entries(ISO_COUNTRIES).map(([key, value]) => (
+                          <SelectItem key={key} value={key}>
+                            [{key}] {value}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
