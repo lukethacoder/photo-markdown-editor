@@ -19,7 +19,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 /* TODO: adjust as required - this may be an absolute path to a different project if required */
+// const photosFolder = path.normalize(
+//   'C:\\Github\\luke-secomb-simple\\src\\content\\photography'
+// )
 const photosFolder = path.join(__dirname, 'photos')
+const photosFolderRelative = path.relative('./', photosFolder)
 // const toLoadFolder = path.join(__dirname, 'processing')
 
 const schema = PhotoSchema({ image: () => z.string() })
@@ -32,12 +36,14 @@ app.use(cors())
 app.use(
   '/images/*',
   serveStatic({
-    root: './photos',
+    root: photosFolderRelative,
     rewriteRequestPath(path) {
       return path.replace('/images/', '')
     },
     onNotFound: (path, c) => {
-      console.log(`${path} is not found, you access ${c.req.path}`)
+      console.log(
+        `${path} is not found, you access ${c.req.path} with root: ${photosFolderRelative}`
+      )
     },
   })
 )

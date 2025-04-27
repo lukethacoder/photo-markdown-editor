@@ -76,87 +76,12 @@ function processInstagramTags(formData: FormData): InstagramTags {
   return instagramTags
 }
 
-const updateMetadata = createServerFn({ method: 'POST' })
-  .validator((formData) => {
-    if (!(formData instanceof FormData)) {
-      throw new Error('Invalid form data')
-    }
-
-    const slug = formData.get('slug')
-
-    if (!slug) {
-      throw new Error('slug is required')
-    }
-
-    const formatData = Object.fromEntries(formData.entries())
-    console.log('TODO: formatData ', formatData)
-    const oldSlug = formData.get('old-slug')
-
-    const date = new Date(parseInt(formatData.date as string))
-
-    const data = {
-      ...formatData,
-      date,
-      tags: Array.isArray(formatData.tags)
-        ? formatData.tags
-        : [formatData.tags],
-      instagramTags: processInstagramTags(formData),
-    }
-
-    const parsedData = schema.parse(data)
-
-    if (oldSlug !== slug) {
-      console.log('chaning slug ', oldSlug, ' to ', slug)
-    }
-    console.log('with data ', parsedData)
-
-    // throw new Error('Invalid form data')
-
-    return {
-      data: parsedData,
-      oldSlug,
-    }
-  })
-  // @ts-ignore - pending https://github.com/TanStack/router/issues/3820
-  .handler(async ({ data: { data, oldSlug } }) => {
-    const body: BodyInit = JSON.stringify(data)
-    console.log('body ', body)
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/photos/${oldSlug}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body,
-      })
-
-      console.log('response ', response)
-      // throw redirect({
-      //   to: `/image/${data.slug}`,
-      //   headers: {
-      //     'X-Custom-Header': 'value',
-      //   },
-      // })
-
-      return 'success'
-      // return new Response('ok', {
-      //   status: 301,
-      //   headers: { Location: `/image/${data.slug}` },
-      // })
-    } catch (error) {
-      // return new Response('error', {
-      //   status: 404,
-      // })
-      return
-    }
-  })
-
 function RouteComponent() {
   const initialData = Route.useLoaderData()
   const navigate = useNavigate()
 
   const [data, setData] = React.useState(initialData)
+  const initialSlug = initialData.slug
 
   const handleAddNewTag = () => {
     setData({
@@ -188,18 +113,14 @@ function RouteComponent() {
    * @param event
    */
   const handleInputChange = (event) => {
-    console.log('event ', event)
     const { target } = event
     const { value, name } = target
 
     const indexKey = Number(target.dataset.key)
 
-    console.log('handleInputChange ', indexKey, name, Number(value))
-
     const instagramTags = (data.instagramTags || []).map((item, key) => {
       if (indexKey === key) {
         if (name.includes('position')) {
-          console.warn('setting position ', Number(value))
           return {
             ...item,
             position: [
@@ -223,6 +144,10 @@ function RouteComponent() {
     })
   }
 
+  /**
+   * Only tracks the inputs of the instagramTag position sliders
+   * @param event
+   */
   const handleInputSliderChange = (indexKey, name, value) => {
     const instagramTags = (data.instagramTags || []).map((item, key) => {
       if (indexKey === key) {
@@ -250,6 +175,98 @@ function RouteComponent() {
     })
   }
 
+  const validateForm = (formData: any) => {
+    if (!(formData instanceof FormData)) {
+      throw new Error('Invalid form data')
+    }
+
+    const slug = formData.get('slug')
+
+    if (!slug) {
+      throw new Error('slug is required')
+    }
+
+    const formatData = Object.fromEntries(formData.entries())
+
+    const date = new Date(parseInt(formatData.date as string))
+
+    const data = {
+      ...formatData,
+      date,
+      tags: Array.isArray(formatData.tags)
+        ? formatData.tags
+        : [formatData.tags],
+      instagramTags: processInstagramTags(formData),
+    }
+
+    const parsedData = schema.parse(data)
+
+    return {
+      data: parsedData,
+    }
+  }
+
+  const updatePostData = async (data: z.infer<typeof schema>) => {
+    const body: BodyInit = JSON.stringify(data)
+    console.log('body ', body)
+
+    const response = await fetch(`${API_BASE_URL}/api/photos/${initialSlug}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body,
+    })
+
+    console.log('response ', response)
+    // throw redirect({
+    //   to: `/image/${data.slug}`,
+    //   headers: {
+    //     'X-Custom-Header': 'value',
+    //   },
+    // })
+
+    return 'success'
+    // return new Response('ok', {
+    //   status: 301,
+    //   headers: { Location: `/image/${data.slug}` },
+    // })
+  }
+
+  const handleOnSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); // Prevents the default browser form submission
+    
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      console.log("Form data submitted:", formData);
+      const { data } = validateForm(formData)
+
+      console.log('data ', data)
+  
+      await updatePostData(data)
+      toast.success('Successfully updated data')
+
+      
+
+      // redirect if slugs have changed
+      if (initialSlug !== data.slug) {
+        console.log('changing slug ', initialSlug, ' to ', data.slug)
+        navigate({ to: `/image/${data.slug}` })
+      }
+    } catch (error) {
+      console.error("Submission failed:", error);
+  
+      // Optionally display an error message to the user
+      // alert("Oops! Something went wrong. Please try again.");
+      toast.error('Error updating metadata')
+    } finally {
+      // Optionally perform any cleanup or final actions
+      console.log("Submission process completed.");
+    }
+  };
+
   return (
     <div className='grid md:grid-cols-2 gap-4 p-4 max-w-7xl mx-auto'>
       <div>
@@ -261,9 +278,8 @@ function RouteComponent() {
           <CardContent>
             <form
               className='flex flex-col gap-4'
+              onSubmit={handleOnSubmit}
             >
-              {/* action={updateMetadata.url}
-              method='POST' */}
               <div className='sr-only'>
                 <Label htmlFor='src'>src</Label>
                 <Input id='src' name='src' defaultValue={data.src} readOnly />
@@ -464,11 +480,7 @@ function RouteComponent() {
                 >
                   Cancel
                 </Button>
-                <Button type='submit' onClick={(event) => {
-                  event.preventDefault()
-                  console.log('event ', event)
-                  // await updateMetadata()
-                }}>Save</Button>
+                <Button type='submit'>Save</Button>
               </div>
             </form>
           </CardContent>
