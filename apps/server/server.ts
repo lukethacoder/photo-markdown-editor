@@ -22,9 +22,13 @@ const __dirname = path.dirname(__filename)
 const photosFolder = path.normalize(
   'C:\\Github\\luke-secomb-simple\\src\\content\\photography'
 )
+const photosImageBaseFolder = path.normalize(
+  'C:\\Github\\luke-secomb-simple\\public\\photography\\image'
+)
 // const photosFolder = path.join(__dirname, 'photos')
-const photosFolderRelative = path.relative('./', photosFolder)
-// const toLoadFolder = path.join(__dirname, 'processing')
+const photosFolderRelative = path.relative('./', photosImageBaseFolder)
+
+const IMAGE_BASE_PATH = '/photography/image'
 
 const schema = PhotoSchema({ image: () => z.string() })
 type ImageItem = z.infer<typeof schema>
@@ -54,6 +58,24 @@ async function ensurePhotosFolderExists() {
     await fs.mkdir(photosFolder, { recursive: true })
   } catch (error) {
     console.error('Error creating photos folder:', error)
+  }
+}
+
+async function moveFiles(sourceDir, targetDir) {
+  try {
+    // make sure the target directory exists
+    await fs.mkdir(targetDir, { recursive: true })
+
+    const files = await fs.readdir(sourceDir)
+
+    for (const file of files) {
+      const sourcePath = path.join(sourceDir, file)
+      const targetPath = path.join(targetDir, file)
+
+      await fs.rename(sourcePath, targetPath)
+    }
+  } catch (err) {
+    console.error('Error moving image files to new folder', err)
   }
 }
 
@@ -106,15 +128,16 @@ app.post('/api/photos/:slug', zValidator('json', schema), async (c) => {
   const slug = c.req.param('slug')
   const newData = c.req.valid('json')
   const oldMarkdownPath = path.join(photosFolder, `${slug}.md`)
-  const oldImagePath = path.join(photosFolder, `${slug}.avif`)
+  const oldImagePathBase = path.join(photosImageBaseFolder, slug)
+  const oldImagePath = path.join(oldImagePathBase, `img.avif`)
 
   try {
     const newSlug = newData.slug || slug
     const newMarkdownPath = path.join(photosFolder, `${newSlug}.md`)
-    const newImagePath = path.join(photosFolder, `./${newSlug}.avif`)
+    const newImagePathBase = path.join(photosImageBaseFolder, `./${newSlug}`)
 
     // Update the src property in the newData
-    newData.src = `./${newSlug}.avif`
+    newData.srcPath = `${IMAGE_BASE_PATH}/${newSlug}/img.avif`
 
     // Construct the content (body of the Markdown file)
     const fileContent = await fs.readFile(oldMarkdownPath, 'utf-8')
@@ -131,18 +154,27 @@ app.post('/api/photos/:slug', zValidator('json', schema), async (c) => {
       ...newDataWithoutSlugOrContent,
     }
 
-    // merge the new data with the old data - make sure title,slug,..rest is the key order
-    const markdown = matter.stringify(newData.content || content, {
-      src: newComputedData.src,
+    const newFrontMatter = {
       ...newComputedData,
-    })
+      srcPath: newComputedData.srcPath,
+    }
+
+    if (!newFrontMatter.srcPath.startsWith('/')) {
+      throw new Error('srcPath should start with "/"')
+    }
+
+    // merge the new data with the old data - make sure title,slug,..rest is the key order
+    const markdown = matter.stringify(
+      newData.content || content,
+      newFrontMatter
+    )
 
     // Write the updated markdown file
     await fs.writeFile(newMarkdownPath, markdown, 'utf-8')
-    console.log(`Updated metadata file: ${path.basename(newMarkdownPath)}`)
 
     // Rename files if the slug has changed
     if (slug !== newSlug) {
+      console.log(`➖ slugs have changed  "${slug}" -> "${newSlug}"`)
       // await fs.rename(oldMarkdownPath, newMarkdownPath);
       if (
         await fs
@@ -151,7 +183,7 @@ app.post('/api/photos/:slug', zValidator('json', schema), async (c) => {
           .catch(() => false)
       ) {
         await fs.rm(oldMarkdownPath)
-        console.log(`Removed old markdown file ${oldMarkdownPath}`)
+        console.log(`🚮 Removed old markdown file ${oldMarkdownPath}`)
       }
       if (
         await fs
@@ -159,16 +191,25 @@ app.post('/api/photos/:slug', zValidator('json', schema), async (c) => {
           .then(() => true)
           .catch(() => false)
       ) {
-        await fs.rename(oldImagePath, newImagePath)
-        console.log(`Renamed image to ${path.basename(newImagePath)}`)
+        console.log(
+          `📂 Moving image directory "${oldImagePathBase}" -> "${newImagePathBase}"`
+        )
+        // move files to the new folder
+        await moveFiles(oldImagePathBase, newImagePathBase)
+
+        // remove the old folder path
+        await fs.rm(oldImagePathBase, { recursive: true })
       }
     }
 
-    return c.json({
-      message: `Metadata for ${newSlug} updated successfully.`,
-    })
+    return c.json(
+      {
+        message: `Metadata for ${newSlug} updated successfully.`,
+      },
+      200
+    )
   } catch (error) {
-    console.error(`Error updating metadata for ${slug}:`, error)
+    console.error(`❌ Error updating metadata for ${slug}:`, error)
     return c.json({ error: `Failed to update metadata for ${slug}.` }, 500)
   }
 })

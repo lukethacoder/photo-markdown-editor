@@ -67,7 +67,9 @@ export const PhotoSchema = ({ image }: { image: () => ZodSchema }) =>
     tags: z.array(z.enum(PHOTOGRAPHY_TAGS)).optional(),
     date: z.union([z.string().transform((str) => new Date(str)), z.date()]),
     // should match name of the file
-    src: image(),
+    // should match name of the file
+    // src: image(),
+    srcPath: z.string().startsWith('/'),
     alt: z.string(),
     // base64 encoded blurred version of the image - ideally nice and small to display while the main image is loading
     blurHash: z.string().startsWith('data:image/').optional(),

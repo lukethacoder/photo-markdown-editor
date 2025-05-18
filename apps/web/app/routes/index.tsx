@@ -23,8 +23,8 @@ function Home() {
   return (
     <div className="image-grid">
       {state.map((item) => (
-        <a href={`/image/${item.slug}`} key={item.slug} className='overflow-hidden aspect-square hover:opacity-80 transform-opacity duration-200 ease-in-out'>
-          <img className="w-full h-full object-cover" src={`${API_BASE_URL}/images/${item.slug}.avif`} />
+        <a href={`/image/${item.slug.toLowerCase()}`} key={item.slug} className='overflow-hidden aspect-square hover:opacity-80 transform-opacity duration-200 ease-in-out'>
+          <img className="w-full h-full object-cover" src={`${API_BASE_URL}/images/${item.slug}/img.avif`} />
         </a>
       ))}
     </div>

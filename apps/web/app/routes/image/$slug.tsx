@@ -36,7 +36,7 @@ type InstagramTags = z.infer<typeof schema>['instagramTags']
 
 export const Route = createFileRoute('/image/$slug')({
   loader: async ({ params: { slug } }) => {
-    const data = await fetch(`${API_BASE_URL}/api/photos/${slug}`).then((res) =>
+    const data = await fetch(`${API_BASE_URL}/api/photos/${slug.toLowerCase()}`).then((res) =>
       res.json()
     )
     const parsedData = schema.parse(data)
@@ -304,11 +304,11 @@ function RouteComponent() {
           </CardHeader>
           <CardContent>
             <form className='flex flex-col gap-4' onSubmit={handleOnSubmit}>
-              <div className='sr-only'>
-                <Label htmlFor='src'>src</Label>
-                <Input id='src' name='src' defaultValue={data.src} readOnly />
+              <div className=''>
+                <Label htmlFor='srcPath'>srcPath</Label>
+                <Input id='srcPath' name='srcPath' defaultValue={data.srcPath} readOnly />
               </div>
-              <div className='sr-only'>
+              <div className=''>
                 <Label htmlFor='old-slug'>Old Slug</Label>
                 <Input id='old-slug' name='old-slug' defaultValue={data.slug} />
               </div>
@@ -579,7 +579,7 @@ function RouteComponent() {
               )
             })}
           </div>
-          <img src={`${API_BASE_URL}/images/${data.slug}.avif`} />
+          <img src={`${API_BASE_URL}/images/${data.slug}/img.avif`} />
         </div>
         <div className='flex max-w-full w-[240px] h-[240px]'>
           <img src={data.blurHash} className='object-contain' />
